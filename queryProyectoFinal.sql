@@ -66,7 +66,7 @@ GO
 -- USUARIO: Superclase de todas las personas que entran al sistema (clientes y empleados).
 CREATE TABLE USUARIO(
 	ID_USUARIO INT IDENTITY(1,1) PRIMARY KEY NOT NULL,
-	CORREO VARCHAR(100),
+	CORREO VARCHAR(100) NOT NULL,   -- FNBC: llave candidata (UNIQUE en el punto 4)
 	CONTRASENA_HASH VARBINARY(32),
 	ROL VARCHAR(45),
 	ACTIVO BIT
@@ -77,14 +77,14 @@ GO
 CREATE TABLE CLIENTE(
 	ID_CLIENTE INT PRIMARY KEY NOT NULL,
 	ID_TIPO_DOCUMENTO INT NOT NULL,
-	NUM_DOCUMENTO VARCHAR(20),
+	NUM_DOCUMENTO VARCHAR(20) NOT NULL,   -- FNBC: (tipo, número) es llave candidata
 	NOMBRES VARCHAR(45),
 	DIRECCION VARCHAR(255),
 	CODIGO_POSTAL VARCHAR(10),
 	GENERO VARCHAR(45),
 	FECHA_NACIMIENTO DATE,
 	NIVEL_ESTUDIOS VARCHAR(45),
-	NUM_LICENCIA VARCHAR(20),
+	NUM_LICENCIA VARCHAR(20) NOT NULL,    -- FNBC: llave candidata
 	CATEGORIA_LICENCIA VARCHAR(45),
 	VENCIMIENTO_LICENCIA DATE,
 	ESTADO VARCHAR(45),
@@ -101,10 +101,12 @@ CREATE TABLE EMPLEADO(
 GO
 
 -- TELEFONO_CLIENTE: Atributo multivaluado de CLIENTE (1FN): un cliente tiene varios teléfonos.
+-- 1FN: PK compuesta, así no se repite el mismo teléfono para el mismo cliente.
 CREATE TABLE TELEFONO_CLIENTE(
 	ID_CLIENTE INT NOT NULL,
 	ID_TIPO_TELEFONO INT NOT NULL,
-	NUMERO VARCHAR(20)
+	NUMERO VARCHAR(20) NOT NULL,
+	CONSTRAINT PK_TELEFONO_CLIENTE PRIMARY KEY (ID_CLIENTE, NUMERO)
 );
 GO
 
@@ -143,8 +145,8 @@ GO
 CREATE TABLE TARIFA(
 	ID_TARIFA INT IDENTITY(1,1) PRIMARY KEY NOT NULL,
 	ID_MODALIDAD INT NOT NULL,
-	GAMA VARCHAR(45),
-	KM_MIN INT,
+	GAMA VARCHAR(45) NOT NULL,   -- FNBC: (modalidad, gama, km mínimo) es llave candidata
+	KM_MIN INT NOT NULL,
 	KM_MAX INT,
 	VALOR_DIA DECIMAL(14,2)
 );
@@ -154,7 +156,7 @@ GO
 CREATE TABLE CONVENIO(
 	ID_CONVENIO INT IDENTITY(1,1) PRIMARY KEY NOT NULL,
 	ID_TIPO_EMPRESA INT NOT NULL,
-	EMPRESA VARCHAR(45),
+	EMPRESA VARCHAR(45) NOT NULL,   -- FNBC: llave candidata
 	PORCENTAJE_DESCUENTO DECIMAL(5,2)
 );
 GO
@@ -164,12 +166,31 @@ GO
 -- Vehículos
 -- ---------------------------------------------------------------------
 
+-- MARCA: Marcas de vehículos (Chevrolet, Renault, Mazda...).
+-- 3FN: sale de VEHICULO para quitar la dependencia transitiva MODELO -> MARCA.
+CREATE TABLE MARCA(
+	ID_MARCA INT IDENTITY(1,1) PRIMARY KEY NOT NULL,
+	NOMBRE VARCHAR(45) NOT NULL
+);
+GO
+
+-- MODELO: Modelos de cada marca (Spark, Logan, CX-5...).
+-- 3FN: cada modelo pertenece a una sola marca.
+CREATE TABLE MODELO(
+	ID_MODELO INT IDENTITY(1,1) PRIMARY KEY NOT NULL,
+	ID_MARCA INT NOT NULL,
+	NOMBRE VARCHAR(45) NOT NULL
+);
+GO
+
 -- VEHICULO: Vehículos de la empresa (incluye el stock de respaldo: ES_RESPALDO).
+-- 3FN: ya no guarda MARCA ni MODELO, solo ID_MODELO.
+-- Capacidad, puertas, consumo, combustible, transmisión y gama se quedan aquí
+-- porque un mismo modelo sale en varias versiones.
 CREATE TABLE VEHICULO(
 	ID_VEHICULO INT IDENTITY(1,1) PRIMARY KEY NOT NULL,
-	PLACA VARCHAR(10),
-	MARCA VARCHAR(45),
-	MODELO VARCHAR(45),
+	ID_MODELO INT NOT NULL,
+	PLACA VARCHAR(10) NOT NULL,   -- FNBC: llave candidata
 	GAMA VARCHAR(45),
 	CATEGORIA_LICENCIA VARCHAR(45),
 	CAPACIDAD TINYINT,
@@ -184,11 +205,13 @@ CREATE TABLE VEHICULO(
 );
 GO
 
--- MULTIMEDIA_VEHICULO: Fotos y videos de cada vehículo (entidad débil, solo FK).
+-- MULTIMEDIA_VEHICULO: Fotos y videos de cada vehículo (entidad débil).
+-- 1FN: PK compuesta (vehículo + url, la url es la llave parcial).
 CREATE TABLE MULTIMEDIA_VEHICULO(
 	ID_VEHICULO INT NOT NULL,
 	ID_TIPO_MULTIMEDIA INT NOT NULL,
-	URL VARCHAR(255)
+	URL VARCHAR(255) NOT NULL,
+	CONSTRAINT PK_MULTIMEDIA_VEHICULO PRIMARY KEY (ID_VEHICULO, URL)
 );
 GO
 
@@ -201,14 +224,18 @@ CREATE TABLE TALLER(
 );
 GO
 
--- MANTENIMIENTO: Hoja de vida del vehículo (entidad débil, solo FK).
+-- MANTENIMIENTO: Hoja de vida del vehículo (entidad débil).
+-- 1FN: PK compuesta (vehículo + número de mantenimiento, la llave parcial).
+-- NUM_MANTENIMIENTO es IDENTITY: se llena solo, no hay que ponerlo en el INSERT.
 CREATE TABLE MANTENIMIENTO(
 	ID_VEHICULO INT NOT NULL,
+	NUM_MANTENIMIENTO INT IDENTITY(1,1) NOT NULL,
 	ID_TALLER INT NOT NULL,
 	ID_TIPO_MANTENIMIENTO INT NOT NULL,
 	FECHA DATE,
 	COSTO DECIMAL(14,2),
-	DESCRIPCION VARCHAR(255)
+	DESCRIPCION VARCHAR(255),
+	CONSTRAINT PK_MANTENIMIENTO PRIMARY KEY (ID_VEHICULO, NUM_MANTENIMIENTO)
 );
 GO
 
@@ -226,7 +253,7 @@ CREATE TABLE RESERVA(
 	ID_POLIZA INT NOT NULL,
 	ID_MODALIDAD INT NOT NULL,
 	ID_CONVENIO INT,
-	CODIGO_RESERVA VARCHAR(20),
+	CODIGO_RESERVA VARCHAR(20) NOT NULL,   -- FNBC: llave candidata (código del QR)
 	FECHA_INICIO DATETIME,
 	FECHA_FIN DATETIME,
 	ESTADO VARCHAR(45),
@@ -237,14 +264,15 @@ CREATE TABLE RESERVA(
 GO
 
 -- ALQUILER: Alquiler que nace de una reserva (contrato).
+-- FECHA_FIN_PACTADA no es copia de RESERVA.FECHA_FIN: en la entrega se puede ampliar el tiempo.
 CREATE TABLE ALQUILER(
 	ID_ALQUILER INT IDENTITY(1,1) PRIMARY KEY NOT NULL,
-	ID_RESERVA INT NOT NULL,
+	ID_RESERVA INT NOT NULL,   -- relación 1 : 1 (UNIQUE en el punto 4)
 	FECHA_ENTREGA DATETIME,
 	FECHA_FIN_PACTADA DATETIME,
 	FECHA_DEVOLUCION DATETIME,
 	ANTICIPO DECIMAL(14,2),
-	VALOR_TOTAL DECIMAL(14,2)
+	VALOR_TOTAL DECIMAL(14,2)   -- dato derivado guardado como registro contable
 );
 GO
 
@@ -260,10 +288,12 @@ CREATE TABLE INSPECCION(
 );
 GO
 
--- FOTO_INSPECCION: Fotos de cada inspección (atributo multivaluado, solo FK).
+-- FOTO_INSPECCION: Fotos de cada inspección (atributo multivaluado).
+-- 1FN: PK compuesta (inspección + url).
 CREATE TABLE FOTO_INSPECCION(
 	ID_INSPECCION INT NOT NULL,
-	URL VARCHAR(255)
+	URL VARCHAR(255) NOT NULL,
+	CONSTRAINT PK_FOTO_INSPECCION PRIMARY KEY (ID_INSPECCION, URL)
 );
 GO
 
@@ -279,7 +309,7 @@ GO
 -- ENCUESTA: Encuesta de satisfacción de un alquiler.
 CREATE TABLE ENCUESTA(
 	ID_ENCUESTA INT IDENTITY(1,1) PRIMARY KEY NOT NULL,
-	ID_ALQUILER INT NOT NULL,
+	ID_ALQUILER INT NOT NULL,   -- relación 1 : 1 (UNIQUE en el punto 4)
 	CALIF_SERVICIO TINYINT,
 	CALIF_VEHICULO TINYINT,
 	COMENTARIO VARCHAR(255)
@@ -294,10 +324,10 @@ GO
 -- FACTURA: Factura generada por un alquiler.
 CREATE TABLE FACTURA(
 	ID_FACTURA INT IDENTITY(1,1) PRIMARY KEY NOT NULL,
-	ID_ALQUILER INT NOT NULL,
-	CODIGO VARCHAR(20),
+	ID_ALQUILER INT NOT NULL,   -- relación 1 : 1 (UNIQUE en el punto 4)
+	CODIGO VARCHAR(20) NOT NULL,   -- FNBC: llave candidata
 	FECHA DATE,
-	TOTAL DECIMAL(14,2)
+	TOTAL DECIMAL(14,2)   -- dato derivado guardado como registro contable
 );
 GO
 
@@ -331,6 +361,7 @@ CREATE TABLE PAGO_TARJETA(
 GO
 
 -- PAGO_EFECTIVO: Subclase de PAGO: pago en efectivo.
+-- CAMBIO es dato derivado (VALOR_RECIBIDO - PAGO.VALOR): se guarda para el cuadre de caja.
 CREATE TABLE PAGO_EFECTIVO(
 	ID_PAGO INT PRIMARY KEY NOT NULL,
 	VALOR_RECIBIDO DECIMAL(14,2),
@@ -404,6 +435,20 @@ GO
 
 
 -- --- Vehículos ---
+
+-- relación "fabrica" del MER (MARCA 1 : M MODELO)   -- 3FN
+ALTER TABLE MODELO   -- tabla donde se encuentra la FK
+ADD CONSTRAINT FK_MODELO_MARCA
+FOREIGN KEY (ID_MARCA)   -- atributo de la FK
+REFERENCES MARCA (ID_MARCA)   -- tabla y la clave PK
+GO
+
+-- relación "es_de" del MER (MODELO 1 : M VEHICULO)   -- 3FN
+ALTER TABLE VEHICULO   -- tabla donde se encuentra la FK
+ADD CONSTRAINT FK_VEHICULO_MODELO
+FOREIGN KEY (ID_MODELO)   -- atributo de la FK
+REFERENCES MODELO (ID_MODELO)   -- tabla y la clave PK
+GO
 
 -- relación "recibe" del MER (VEHICULO 1 : M MANTENIMIENTO)
 ALTER TABLE MANTENIMIENTO   -- tabla donde se encuentra la FK
@@ -577,5 +622,98 @@ ALTER TABLE PAGO   -- tabla donde se encuentra la FK
 ADD CONSTRAINT FK_PAGO_EMPLEADO
 FOREIGN KEY (ID_EMPLEADO)   -- atributo de la FK
 REFERENCES EMPLEADO (ID_EMPLEADO)   -- tabla y la clave PK
+GO
+
+
+-- =====================================================================
+-- 4. LLAVES CANDIDATAS (UNIQUE)  ->  FNBC
+--    ALTER TABLE <tabla donde está la llave candidata>
+--    ADD CONSTRAINT <nombre>
+--    UNIQUE (<columnas que no se pueden repetir>)
+-- =====================================================================
+
+
+-- un correo = un usuario (se usa para ingresar y recibir el QR)
+ALTER TABLE USUARIO   -- tabla donde está la llave candidata
+ADD CONSTRAINT UQ_USUARIO_CORREO
+UNIQUE (CORREO)   -- columnas que no se pueden repetir
+GO
+
+-- un documento (tipo + número) = un cliente
+ALTER TABLE CLIENTE   -- tabla donde está la llave candidata
+ADD CONSTRAINT UQ_CLIENTE_DOCUMENTO
+UNIQUE (ID_TIPO_DOCUMENTO, NUM_DOCUMENTO)   -- columnas que no se pueden repetir
+GO
+
+-- una licencia = un cliente
+ALTER TABLE CLIENTE   -- tabla donde está la llave candidata
+ADD CONSTRAINT UQ_CLIENTE_LICENCIA
+UNIQUE (NUM_LICENCIA)   -- columnas que no se pueden repetir
+GO
+
+-- una tarifa por modalidad, gama y rango de km
+ALTER TABLE TARIFA   -- tabla donde está la llave candidata
+ADD CONSTRAINT UQ_TARIFA_MODALIDAD_GAMA_KM
+UNIQUE (ID_MODALIDAD, GAMA, KM_MIN)   -- columnas que no se pueden repetir
+GO
+
+-- una empresa = un convenio
+ALTER TABLE CONVENIO   -- tabla donde está la llave candidata
+ADD CONSTRAINT UQ_CONVENIO_EMPRESA
+UNIQUE (EMPRESA)   -- columnas que no se pueden repetir
+GO
+
+-- no se repite el nombre de una marca
+ALTER TABLE MARCA   -- tabla donde está la llave candidata
+ADD CONSTRAINT UQ_MARCA_NOMBRE
+UNIQUE (NOMBRE)   -- columnas que no se pueden repetir
+GO
+
+-- no se repite un modelo dentro de la misma marca
+ALTER TABLE MODELO   -- tabla donde está la llave candidata
+ADD CONSTRAINT UQ_MODELO_MARCA_NOMBRE
+UNIQUE (ID_MARCA, NOMBRE)   -- columnas que no se pueden repetir
+GO
+
+-- una placa = un vehículo
+ALTER TABLE VEHICULO   -- tabla donde está la llave candidata
+ADD CONSTRAINT UQ_VEHICULO_PLACA
+UNIQUE (PLACA)   -- columnas que no se pueden repetir
+GO
+
+-- un código (QR) = una reserva
+ALTER TABLE RESERVA   -- tabla donde está la llave candidata
+ADD CONSTRAINT UQ_RESERVA_CODIGO
+UNIQUE (CODIGO_RESERVA)   -- columnas que no se pueden repetir
+GO
+
+-- relación "se convierte en" (RESERVA 1 : 1 ALQUILER): una reserva da un solo alquiler
+ALTER TABLE ALQUILER   -- tabla donde está la llave candidata
+ADD CONSTRAINT UQ_ALQUILER_RESERVA
+UNIQUE (ID_RESERVA)   -- columnas que no se pueden repetir
+GO
+
+-- una sola acta de entrega y una sola de devolución por alquiler
+ALTER TABLE INSPECCION   -- tabla donde está la llave candidata
+ADD CONSTRAINT UQ_INSPECCION_ALQUILER_TIPO
+UNIQUE (ID_ALQUILER, ID_TIPO_INSPECCION)   -- columnas que no se pueden repetir
+GO
+
+-- relación "evalua" (ALQUILER 1 : 1 ENCUESTA): una encuesta por alquiler
+ALTER TABLE ENCUESTA   -- tabla donde está la llave candidata
+ADD CONSTRAINT UQ_ENCUESTA_ALQUILER
+UNIQUE (ID_ALQUILER)   -- columnas que no se pueden repetir
+GO
+
+-- relación "genera" (ALQUILER 1 : 1 FACTURA): una factura por alquiler
+ALTER TABLE FACTURA   -- tabla donde está la llave candidata
+ADD CONSTRAINT UQ_FACTURA_ALQUILER
+UNIQUE (ID_ALQUILER)   -- columnas que no se pueden repetir
+GO
+
+-- un código = una factura
+ALTER TABLE FACTURA   -- tabla donde está la llave candidata
+ADD CONSTRAINT UQ_FACTURA_CODIGO
+UNIQUE (CODIGO)   -- columnas que no se pueden repetir
 GO
 
